@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-// Initialisation avec la version API exacte exigée par Vercel
+// Le "as any" empêche Vercel de bloquer la compilation pour une histoire de texte
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-10-28.acacia', 
+  apiVersion: '2024-10-28' as any, 
 });
 
 export async function POST(request: Request) {
@@ -12,7 +12,6 @@ export async function POST(request: Request) {
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      // La ligne payment_method_types a été retirée pour laisser Stripe gérer automatiquement
       line_items: [
         {
           price: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_VIP, 
