@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="fr" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TCG Market Signals — Anticipez le marché TCG</title>
+  <meta name="description" content="Signaux de marché TCG : analyse des volumes, détection de buyouts et alertes de volatilité sur Pokémon et Riftbound." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper:    '#F7F5F0',
+            ink:      '#0A0A0A',
+            bordeaux: { DEFAULT: '#7A2021', hover: '#5F1819' }
+          },
+          fontFamily: {
+            display: ['"Playfair Display"', 'ui-serif', 'Georgia', 'serif'],
+            mono:    ['"JetBrains Mono"', '"Source Code Pro"', 'ui-monospace', 'monospace'],
+            sans:    ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;0,900;1,400;1,500&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    html, body { background: #F7F5F0; }
+    body { overflow-x: hidden; }
+
+    /* ---------- Paper noise texture ---------- */
+    .paper-noise {
+      position: fixed; inset: 0; pointer-events: none; z-index: 60;
+      opacity: .09; mix-blend-mode: multiply;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    }
+    /* Faint paper fibres / vignette */
+    .paper-tone {
+      position: fixed; inset: 0; pointer-events: none; z-index: -1;
+      background:
+        radial-gradient(1200px 800px at 20% 0%, rgba(255,255,255,.7), transparent 60%),
+        radial-gradient(1400px 900px at 100% 100%, rgba(120,100,70,.07), transparent 60%);
+    }
+
+    /* ---------- Type ---------- */
+    .t-monument { font-size: clamp(4.25rem, 12.5vw, 12.5rem); line-height: .84; letter-spacing: -0.045em; }
+    .t-section  { font-size: clamp(2.75rem, 6.5vw, 6.5rem); line-height: .9;  letter-spacing: -0.035em; }
+    .label      { font-family: "JetBrains Mono", "Source Code Pro", ui-monospace, monospace; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; }
+
+    /* ---------- Ticker: continuous right → left ---------- */
+    @keyframes marquee {
+      from { transform: translate3d(0, 0, 0); }
+      to   { transform: translate3d(-50%, 0, 0); }
+    }
+    .marquee-track { animation: marquee 42s linear infinite; will-change: transform; }
+
+    /* ---------- Locked artwork ---------- */
+    .locked-art   { filter: grayscale(1) contrast(.9) brightness(1.05); opacity: .35; }
+    .premium-lock { filter: blur(6px); opacity: .55; user-select: none; pointer-events: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .marquee-track { animation: none; }
+      [data-reveal] { opacity: 1 !important; transform: none !important; transition: none !important; }
+    }
+  </style>
+  <!-- Without JS, everything stays visible -->
+  <noscript><style>[data-reveal]{opacity:1!important;transform:none!important}</style></noscript>
+</head>
+<body class="font-sans text-ink antialiased pb-24 selection:bg-ink selection:text-paper">
+  <div class="paper-tone" aria-hidden="true"></div>
+  <div class="paper-noise" aria-hidden="true"></div>
+  <!-- Tailwind safelist for classes added by the reveal script -->
+  <div class="hidden opacity-100 translate-y-0" aria-hidden="true"></div>
+
+  <!-- NAV -->
+  <header class="sticky top-0 z-40 border-b border-ink bg-paper/95 backdrop-blur-sm">
+    <nav class="mx-auto grid max-w-[1440px] grid-cols-12 items-center px-5 py-3.5 md:px-10">
+      <a href="#" class="col-span-6 flex items-baseline gap-4 md:col-span-4">
+        <span class="font-display text-xl font-bold tracking-tight">TCG Market Signals</span>
+        <span class="label hidden text-ink/40 lg:inline">Vol. II — Nov. 2026</span>
+      </a>
+      <div class="label col-span-4 hidden justify-center gap-10 text-ink/60 md:flex">
+        <a href="#anomalies" class="transition-colors hover:text-ink">Anomalies</a>
+        <a href="#avantages" class="transition-colors hover:text-ink">Méthode</a>
+        <a href="#tarif" class="transition-colors hover:text-ink">Tarif</a>
+      </div>
+      <div class="col-span-6 flex justify-end md:col-span-4">
+        <a href="https://buy.stripe.com/6oUbJ0dx7e025tt9NpbQY00" class="label border border-ink px-4 py-2 transition-colors hover:bg-ink hover:text-paper">S'abonner</a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- TICKER (top) -->
+  <div class="overflow-hidden border-b border-ink" aria-label="Variations récentes">
+    <div class="marquee-track flex w-max whitespace-nowrap py-2.5 font-mono text-[11px] uppercase tracking-[0.14em]">
+      <div class="flex shrink-0 gap-10 pr-10">
+        <span>OGN-270 <span class="text-bordeaux">▲ 18.4%</span></span><span class="text-ink/30">/</span>
+        <span>DS-ZAPDOS-ex <span class="text-bordeaux">▲ 9.1%</span></span><span class="text-ink/30">/</span>
+        <span>SFD-BOX <span class="text-ink/50">▼ 2.3%</span></span><span class="text-ink/30">/</span>
+        <span>UNL-SR-ASHE <span class="text-bordeaux">▲ 31.7%</span></span><span class="text-ink/30">/</span>
+        <span>DS-DISPLAY <span class="text-bordeaux">▲ 4.6%</span></span><span class="text-ink/30">/</span>
+        <span>OGN-BOX <span class="text-ink/50">▼ 1.1%</span></span><span class="text-ink/30">/</span>
+        <span>DS-GYARADOS-★ <span class="text-bordeaux">▲ 12.0%</span></span><span class="text-ink/30">/</span>
+      </div>
+      <div class="flex shrink-0 gap-10 pr-10" aria-hidden="true">
+        <span>OGN-270 <span class="text-bordeaux">▲ 18.4%</span></span><span class="text-ink/30">/</span>
+        <span>DS-ZAPDOS-ex <span class="text-bordeaux">▲ 9.1%</span></span><span class="text-ink/30">/</span>
+        <span>SFD-BOX <span class="text-ink/50">▼ 2.3%</span></span><span class="text-ink/30">/</span>
+        <span>UNL-SR-ASHE <span class="text-bordeaux">▲ 31.7%</span></span><span class="text-ink/30">/</span>
+        <span>DS-DISPLAY <span class="text-bordeaux">▲ 4.6%</span></span><span class="text-ink/30">/</span>
+        <span>OGN-BOX <span class="text-ink/50">▼ 1.1%</span></span><span class="text-ink/30">/</span>
+        <span>DS-GYARADOS-★ <span class="text-bordeaux">▲ 12.0%</span></span><span class="text-ink/30">/</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- HERO — asymmetric -->
+  <section class="relative">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-12 gap-x-5 px-5 pb-28 pt-14 md:px-10 md:pt-24">
+
+      <div data-reveal class="relative z-10 col-span-12 opacity-0 translate-y-10 transition-all duration-1000 ease-out lg:col-span-7">
+        <p class="label mb-10 flex items-center gap-3 text-ink/60"><span class="inline-block h-px w-10 bg-ink"></span>Scan Cardmarket actif · Pokémon & Riftbound</p>
+
+        <h1 class="t-monument font-display font-black lg:-mr-[18%]">
+          Anticipez<br /><span class="font-normal italic">le</span> marché.
+        </h1>
+
+        <p class="label mt-10">TCG — avant tout le monde</p>
+
+        <div class="mt-14 grid grid-cols-12 gap-5 border-t border-ink pt-8">
+          <p class="col-span-12 max-w-md text-[15px] leading-relaxed text-ink/70 md:col-span-7">
+            Volume d'offres, rareté, pull rate. Quand le stock d'une Secret Rare fond de plus de 30&nbsp;% pendant que le prix stagne, le signal tombe — avant la hausse.
+          </p>
+          <div class="col-span-12 flex flex-col items-start gap-3 md:col-span-5">
+            <a href="https://buy.stripe.com/6oUbJ0dx7e025tt9NpbQY00" class="label rounded-sm bg-bordeaux px-6 py-4 font-bold text-paper transition-colors hover:bg-bordeaux-hover">Accéder aux signaux →</a>
+            <a href="#anomalies" class="label border-b border-ink pb-1 transition-opacity hover:opacity-60">Voir le signal gratuit</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cut-out hero visual floating on paper -->
+      <div data-reveal class="relative col-span-12 mt-16 opacity-0 translate-y-10 transition-all delay-200 duration-1000 ease-out lg:col-span-5 lg:mt-0">
+        <figure class="relative mx-auto max-w-md lg:ml-auto lg:mr-0">
+          <img data-art="cutout"
+               src="https://i.imgur.com/KAd5aDU.png"
+               alt="Léviator Holo — Espèces Delta" class="block aspect-[4/5] w-full rotate-[4deg] object-contain drop-shadow-2xl" />
+          <!-- annotation -->
+          <figcaption class="absolute -left-4 bottom-16 hidden items-center gap-3 lg:flex lg:-left-32">
+            <span class="label text-right leading-relaxed">Fig. 01<br /><span class="text-ink/50">Léviator δ · Espèces Delta</span></span>
+            <span class="h-px w-20 bg-ink"></span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <!-- KPI strip -->
+      <dl data-reveal class="col-span-12 mt-20 grid grid-cols-3 border-y border-ink opacity-0 translate-y-10 transition-all duration-1000 ease-out lg:col-span-8">
+        <div class="border-r border-ink py-5 pr-4">
+          <dt class="label text-ink/50">Références suivies</dt>
+          <dd class="mt-2 font-display text-4xl font-bold tracking-tight md:text-5xl">1 240</dd>
+        </div>
+        <div class="border-r border-ink px-4 py-5">
+          <dt class="label text-ink/50">Fréquence du scan</dt>
+          <dd class="mt-2 font-display text-4xl font-bold tracking-tight md:text-5xl">6 h</dd>
+        </div>
+        <div class="py-5 pl-4">
+          <dt class="label text-ink/50">Seuil d'alerte</dt>
+          <dd class="mt-2 font-display text-4xl font-bold tracking-tight md:text-5xl">−30 %</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ANOMALIES — gallery -->
+  <section id="anomalies" class="border-t border-ink py-32">
+    <div class="mx-auto max-w-[1440px] px-5 md:px-10">
+
+      <div data-reveal class="grid grid-cols-12 gap-5 opacity-0 translate-y-10 transition-all duration-1000 ease-out">
+        <p class="label col-span-12 md:col-span-2">§ 02 — Flux live</p>
+        <h2 class="t-section col-span-12 font-display font-black md:col-span-7">Anomalies<br /><span class="font-normal italic">récentes</span></h2>
+        <div class="col-span-12 flex flex-col justify-end gap-5 md:col-span-3">
+          <p class="text-sm leading-relaxed text-ink/65">Écart offre / prix détecté. Un signal offert chaque semaine, en clair. Les autres sont réservés aux abonnés.</p>
+          <p class="label w-fit border border-ink/40 px-2.5 py-1.5 text-ink/60">Objectifs indicatifs — Relevé marché du 15/11/2026</p>
+        </div>
+      </div>
+
+      <!-- ===== N° 01 — FREE SIGNAL ===== -->
+      <div class="mt-28">
+        <p data-reveal class="label mb-12 flex items-center gap-3 opacity-0 translate-y-10 transition-all duration-1000 ease-out">
+          <span class="bg-ink px-2 py-1 text-paper">Gratuit</span> Le Signal Gratuit de la Semaine
+        </p>
+
+        <article data-reveal class="grid grid-cols-12 items-center gap-y-10 opacity-0 translate-y-10 transition-all duration-1000 ease-out">
+
+          <!-- Left annotations (lines run right, into the card) -->
+          <div class="order-2 col-span-12 space-y-14 md:order-1 md:col-span-4">
+            <div class="flex items-end gap-0">
+              <div class="flex-none pr-4 md:text-right">
+                <p class="label text-ink/50">Variation</p>
+                <p class="mt-1 font-mono text-3xl font-bold tabular-nums text-bordeaux">▲ +42,0 %</p>
+              </div>
+              <span class="mb-2 hidden h-px flex-1 bg-ink md:block"></span>
+            </div>
+            <div class="flex items-end">
+              <div class="flex-none pr-4 md:text-right">
+                <p class="label text-ink/50">Trend Price</p>
+                <p class="mt-1 font-mono text-3xl font-bold tabular-nums">145,00 €</p>
+              </div>
+              <span class="mb-2 hidden h-px flex-1 bg-ink md:block"></span>
+            </div>
+            <div class="flex items-end">
+              <div class="flex-none pr-4 md:text-right">
+                <p class="label text-ink/50">Prix au signal</p>
+                <p class="mt-1 font-mono text-xl tabular-nums">102,00 €</p>
+              </div>
+              <span class="mb-2 hidden h-px flex-1 bg-ink md:block"></span>
+            </div>
+          </div>
+
+          <!-- The work, floating free -->
+          <figure class="order-1 col-span-12 md:order-2 md:col-span-4">
+            <img data-art="card" src="https://i.imgur.com/KAd5aDU.png"
+                 alt="Léviator Holo — Espèces Delta" class="mx-auto block aspect-[5/7] w-full max-w-sm -rotate-[1.5deg] object-contain drop-shadow-2xl" />
+          </figure>
+
+          <!-- Right annotations (lines run left, into the card) -->
+          <div class="order-3 col-span-12 space-y-14 md:col-span-4">
+            <div class="flex items-end">
+              <span class="mb-2 hidden h-px w-16 flex-none bg-ink md:block"></span>
+              <div class="pl-4">
+                <p class="label text-ink/80">Pokémon · EX Delta Species · Holo</p>
+                <h3 class="mt-1 font-display text-4xl font-black leading-none tracking-tight md:text-5xl">Léviator<br /><span class="font-normal italic">Holo</span></h3>
+                <p class="label mt-2 text-ink/50">(Espèces Delta)</p>
+                <p class="label mt-3 inline-flex items-center gap-2 border border-ink px-2 py-1 text-ink"><span class="text-ink/50">Numéro</span><span class="h-3 w-px bg-ink/40"></span><span class="tabular-nums">8/110</span></p>
+              </div>
+            </div>
+            <div class="flex items-end">
+              <span class="mb-2 hidden h-px w-16 flex-none bg-ink md:block"></span>
+              <div class="pl-4">
+                <p class="label text-ink/50">Offres 7j</p>
+                <p class="mt-1 font-mono text-xl tabular-nums">−60 %</p>
+                <p class="label mt-1 text-ink/50">Chute du carnet d'offres NM</p>
+              </div>
+            </div>
+            <div class="flex items-end">
+              <span class="mb-2 hidden h-px w-16 flex-none bg-ink md:block"></span>
+              <div class="w-full pl-4">
+                <p class="label text-ink/50">30 jours · signal émis il y a 4 jours</p>
+                <svg viewBox="0 0 200 40" class="mt-2 h-12 w-full max-w-[260px]" preserveAspectRatio="none" aria-label="Évolution du prix sur 30 jours">
+                  <line x1="0" y1="30" x2="200" y2="30" stroke="#0A0A0A" stroke-opacity=".25" stroke-dasharray="2 4" />
+                  <path d="M0 31 L20 30 L40 32 L60 29 L80 30 L100 28 L120 23 L140 19 L160 13 L180 10 L200 4" fill="none" stroke="#0A0A0A" stroke-width="1.25"/>
+                  <circle cx="100" cy="28" r="2.5" fill="#F7F5F0" stroke="#0A0A0A" stroke-width="1.25"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- ===== PREMIUM (VIP) ===== -->
+      <div class="mt-40 border-t border-ink pt-8">
+        <div data-reveal class="grid grid-cols-12 gap-5 opacity-0 translate-y-10 transition-all duration-1000 ease-out">
+          <p class="label col-span-12 md:col-span-2">Salle VIP</p>
+          <h3 class="col-span-12 font-display text-5xl font-black leading-[.9] tracking-tight md:col-span-6 md:text-6xl">Les Signaux<br /><span class="font-normal italic">Premium</span> (VIP)</h3>
+          <p class="col-span-12 self-end text-sm leading-relaxed text-ink/65 md:col-span-3 md:col-start-10">Trois œuvres sous scellé. Courbes, prix d'entrée et volumes complets réservés aux abonnés.</p>
+        </div>
+
+        <div class="mt-20 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+
+          <!-- VIP signal card N° 01 -->
+          <article data-reveal class="group flex flex-col border border-ink bg-paper opacity-0 translate-y-10 transition-all duration-1000 ease-out hover:-translate-y-1" style="transition-delay:0ms">
+            <!-- Top: locked visual -->
+            <div class="relative aspect-[4/3] overflow-hidden border-b border-ink bg-[#d6d3cc]">
+              <img data-art="card" src="https://i.imgur.com/bXKlK96.png" alt="Trainer Gallery (Secrète) — visuel verrouillé" class="locked-art absolute inset-0 h-full w-full object-contain p-4 blur-md" />
+              <div class="absolute inset-0 grid place-items-center">
+                <span class="grid h-14 w-14 animate-[pulse_3s_ease-in-out_infinite] place-items-center rounded-full border border-ink bg-paper">
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                </span>
+              </div>
+              <!-- Performance badge -->
+              <span class="absolute right-3 top-3 rounded-sm bg-green-700 px-2 py-1 font-mono text-xs font-bold tabular-nums text-white">Potentiel ▲ +2080 %</span>
+              <span class="label absolute left-3 top-3 bg-ink px-1.5 py-0.5 text-paper">Premium · N° 01</span>
+            </div>
+            <!-- Bottom: signal data -->
+            <div class="flex flex-1 flex-col p-5">
+              <p class="label text-ink/70">Soleil &amp; Lune · Éclipse Cosmique</p>
+              <h4 class="mb-6 mt-1.5 font-display text-2xl font-bold leading-tight tracking-tight">Trainer Gallery (Secrète)</h4>
+              <p class="mt-auto border-t border-ink pt-3 font-mono text-[12px] uppercase tracking-[0.08em] tabular-nums">
+                <span class="text-ink/50">Prix d'entrée :</span> <span class="font-bold">55 € (Loose NM)</span>
+                <span class="mx-1 text-ink/40" aria-hidden="true">➔</span>
+                <span class="text-ink/50">Target :</span> <span class="font-bold">1 200 € (PSA 10)</span>
+              </p>
+            </div>
+          </article>
+
+          <!-- VIP signal card N° 02 -->
+          <article data-reveal class="group flex flex-col border border-ink bg-paper opacity-0 translate-y-10 transition-all duration-1000 ease-out hover:-translate-y-1" style="transition-delay:150ms">
+            <!-- Top: locked visual -->
+            <div class="relative aspect-[4/3] overflow-hidden border-b border-ink bg-[#d6d3cc]">
+              <img data-art="card" src="https://i.imgur.com/PPj3M8B.png" alt="Étoile d'Or (Vintage) — visuel verrouillé" class="locked-art absolute inset-0 h-full w-full object-contain p-4 blur-md" />
+              <div class="absolute inset-0 grid place-items-center">
+                <span class="grid h-14 w-14 animate-[pulse_3s_ease-in-out_infinite] place-items-center rounded-full border border-ink bg-paper">
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                </span>
+              </div>
+              <!-- Performance badge -->
+              <span class="absolute right-3 top-3 rounded-sm bg-green-700 px-2 py-1 font-mono text-xs font-bold tabular-nums text-white">Potentiel ▲ +57 %</span>
+              <span class="label absolute left-3 top-3 bg-ink px-1.5 py-0.5 text-paper">Premium · N° 02</span>
+            </div>
+            <!-- Bottom: signal data -->
+            <div class="flex flex-1 flex-col p-5">
+              <p class="label text-ink/70">Bloc EX · Gardiens du Pouvoir</p>
+              <h4 class="mb-6 mt-1.5 font-display text-2xl font-bold leading-tight tracking-tight">Étoile d'Or (Vintage)</h4>
+              <p class="mt-auto border-t border-ink pt-3 font-mono text-[12px] uppercase tracking-[0.08em] tabular-nums">
+                <span class="text-ink/50">Prix d'entrée :</span> <span class="font-bold">350 €</span>
+                <span class="mx-1 text-ink/40" aria-hidden="true">➔</span>
+                <span class="text-ink/50">Target :</span> <span class="font-bold">550 €</span>
+              </p>
+            </div>
+          </article>
+
+          <!-- VIP signal card N° 03 -->
+          <article data-reveal class="group flex flex-col border border-ink bg-paper opacity-0 translate-y-10 transition-all duration-1000 ease-out hover:-translate-y-1" style="transition-delay:300ms">
+            <!-- Top: locked visual -->
+            <div class="relative aspect-[4/3] overflow-hidden border-b border-ink bg-[#d6d3cc]">
+              <img data-art="card" src="https://i.imgur.com/NXZfKvH.png" alt="VMAX Alternative (Modern Chase) — visuel verrouillé" class="locked-art absolute inset-0 h-full w-full object-contain p-4 blur-md" />
+              <div class="absolute inset-0 grid place-items-center">
+                <span class="grid h-14 w-14 animate-[pulse_3s_ease-in-out_infinite] place-items-center rounded-full border border-ink bg-paper">
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+                </span>
+              </div>
+              <!-- Performance badge -->
+              <span class="absolute right-3 top-3 rounded-sm bg-red-700 px-2 py-1 font-mono text-xs font-bold tabular-nums text-white">Potentiel ▼ -35 %</span>
+              <span class="label absolute left-3 top-3 bg-ink px-1.5 py-0.5 text-paper">Premium · N° 03</span>
+            </div>
+            <!-- Bottom: signal data -->
+            <div class="flex flex-1 flex-col p-5">
+              <p class="label text-ink/70">Épée &amp; Bouclier · Évolution Céleste</p>
+              <h4 class="mb-6 mt-1.5 font-display text-2xl font-bold leading-tight tracking-tight">VMAX Alternative (Modern Chase)</h4>
+              <p class="mt-auto border-t border-ink pt-3 font-mono text-[12px] uppercase tracking-[0.08em] tabular-nums">
+                <span class="text-ink/50">Prix d'entrée :</span> <span class="font-bold">850 €</span>
+                <span class="mx-1 text-ink/40" aria-hidden="true">➔</span>
+                <span class="text-ink/50">Target :</span> <span class="font-bold">550 €</span>
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <!-- Unlock line -->
+        <div data-reveal class="mt-24 flex flex-col items-start justify-between gap-6 border-y border-ink py-6 opacity-0 translate-y-10 transition-all duration-1000 ease-out md:flex-row md:items-center">
+          <p class="font-display text-3xl font-bold tracking-tight">3 signaux verrouillés. <span class="font-normal italic text-ink/60">Courbes, prix d'entrée et volumes complets.</span></p>
+          <a href="https://buy.stripe.com/6oUbJ0dx7e025tt9NpbQY00" class="label flex-none border-b border-ink pb-1 transition-opacity hover:opacity-60">Débloquer →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AVANTAGES -->
+  <section id="avantages" class="border-t border-ink py-32">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-12 gap-5 px-5 md:px-10">
+      <div data-reveal class="col-span-12 opacity-0 translate-y-10 transition-all duration-1000 ease-out md:col-span-5">
+        <div class="md:sticky md:top-28">
+          <p class="label">§ 03 — Méthode</p>
+          <h2 class="t-section mt-6 font-display font-black">Trois signaux.<br /><span class="font-normal italic">Zéro bruit.</span></h2>
+        </div>
+      </div>
+
+      <ol class="col-span-12 md:col-span-6 md:col-start-7">
+        <li data-reveal class="grid grid-cols-6 gap-5 border-t border-ink py-10 opacity-0 translate-y-10 transition-all duration-1000 ease-out">
+          <span class="label col-span-1 pt-2">01</span>
+          <div class="col-span-5">
+            <h3 class="font-display text-3xl font-bold tracking-tight">Analyse des volumes</h3>
+            <p class="mt-3 text-sm leading-relaxed text-ink/70">Suivi du nombre d'offres actives par référence, croisé avec la rareté et le pull rate. Un stock qui fond sur une carte à faible taux de drop pèse plus qu'un mouvement de prix isolé.</p>
+            <p class="label mt-5 text-ink/45">Δ offres · rareté · pull rate</p>
+          </div>
+        </li>
+        <li data-reveal class="grid grid-cols-6 gap-5 border-t border-ink py-10 opacity-0 translate-y-10 transition-all duration-1000 ease-out" style="transition-delay:120ms">
+          <span class="label col-span-1 pt-2">02</span>
+          <div class="col-span-5">
+            <h3 class="font-display text-3xl font-bold tracking-tight">Détection de buyout</h3>
+            <p class="mt-3 text-sm leading-relaxed text-ink/70">Rachat massif des copies les moins chères repéré par la disparition du bas du carnet d'offres. Signal émis quand le volume chute de plus de 30&nbsp;% en quelques jours à prix stable.</p>
+            <p class="label mt-5 text-ink/45">Seuil : −30 % offres / prix ±5 %</p>
+          </div>
+        </li>
+        <li data-reveal class="grid grid-cols-6 gap-5 border-y border-ink py-10 opacity-0 translate-y-10 transition-all duration-1000 ease-out" style="transition-delay:240ms">
+          <span class="label col-span-1 pt-2">03</span>
+          <div class="col-span-5">
+            <h3 class="font-display text-3xl font-bold tracking-tight">Alertes de volatilité</h3>
+            <p class="mt-3 text-sm leading-relaxed text-ink/70">Écart anormal entre prix minimum et Trend Price, variation brutale sur les Displays scellées. Notification par email dès franchissement du seuil.</p>
+            <p class="label mt-5 text-ink/45">Min vs Trend · Displays · email</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section id="tarif" class="border-t border-ink py-32">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-12 gap-5 px-5 md:px-10">
+      <div data-reveal class="col-span-12 opacity-0 translate-y-10 transition-all duration-1000 ease-out md:col-span-4">
+        <p class="label">§ 04 — Abonnement VIP</p>
+        <p class="mt-6 max-w-xs text-sm leading-relaxed text-ink/65">Sans engagement. Résiliable en un clic.</p>
+      </div>
+
+      <div data-reveal class="col-span-12 border border-ink p-8 opacity-0 translate-y-10 transition-all duration-1000 ease-out md:col-span-7 md:col-start-6 md:p-12">
+        <div class="flex flex-wrap items-end justify-between gap-6 border-b border-ink pb-8">
+          <p class="font-display text-[clamp(4rem,9vw,8rem)] font-black leading-[.85] tracking-[-0.04em] tabular-nums">4,99 €</p>
+          <p class="label text-ink/50">/ mois</p>
+        </div>
+        <ul class="mt-8 grid gap-4 font-mono text-[12px] uppercase tracking-[0.08em] text-ink/80 sm:grid-cols-2">
+          <li class="flex gap-3 border-l border-ink pl-3">Courbes et volumes complets, sans flou</li>
+          <li class="flex gap-3 border-l border-ink pl-3">Alertes buyout en temps quasi réel</li>
+          <li class="flex gap-3 border-l border-ink pl-3">Riftbound : Origins, Spiritforged, Unleashed</li>
+          <li class="flex gap-3 border-l border-ink pl-3">Pokémon : EX Delta Species & Displays ère EX</li>
+        </ul>
+
+        <!-- Stripe Payment Link -->
+        <a href="https://buy.stripe.com/6oUbJ0dx7e025tt9NpbQY00" class="mt-10 flex w-full items-center justify-center gap-3 rounded-sm bg-bordeaux px-6 py-5 font-mono text-sm font-bold uppercase tracking-[0.12em] text-paper transition-colors hover:bg-bordeaux-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-4 focus-visible:ring-offset-paper">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          Accéder aux Signaux (4,99€/mois)
+        </a>
+        <p class="label mt-4 text-center text-ink/45">Paiement sécurisé · CB, Apple Pay, Google Pay</p>
+      </div>
+
+      <p class="col-span-12 mt-8 text-xs leading-relaxed text-ink/50 md:col-span-7 md:col-start-6">
+        Les signaux sont des indicateurs statistiques, pas des conseils en investissement. Le marché des cartes à collectionner est volatil ; une hausse passée ne garantit pas une hausse future.
+      </p>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-ink">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-12 gap-5 px-5 py-12 md:px-10">
+      <p class="col-span-12 font-display text-[clamp(3rem,9vw,8rem)] font-black leading-[.85] tracking-[-0.04em] md:col-span-8">TCG Market<br /><span class="font-normal italic">Signals</span></p>
+      <div class="label col-span-12 flex flex-col justify-end gap-3 text-ink/55 md:col-span-4 md:items-end md:text-right">
+        <p>© 2026 TCG Market Signals</p>
+        <p class="normal-case tracking-normal">Service indépendant, non affilié à The Pokémon Company, Riot Games ou Cardmarket.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- STICKY CTA -->
+  <div class="fixed inset-x-0 bottom-0 z-50 border-t border-ink bg-paper/95 backdrop-blur-sm">
+    <div class="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-3 md:px-10">
+      <div class="hidden sm:block">
+        <p class="font-display text-lg font-bold">3 anomalies détectées cette semaine</p>
+        <p class="label text-ink/50">Débloquez les courbes et niveaux d'entrée.</p>
+      </div>
+      <a href="https://buy.stripe.com/6oUbJ0dx7e025tt9NpbQY00" class="flex w-full items-center justify-center gap-2 rounded-sm bg-bordeaux px-5 py-3 font-mono text-xs font-bold uppercase tracking-[0.12em] text-paper transition-colors hover:bg-bordeaux-hover sm:w-auto">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        Accéder aux Signaux (4,99€/mois)
+      </a>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      /* 1. Image fallbacks (used when the remote placeholders can't load) */
+      var svgURI = function (s) { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s); };
+      var FALLBACK = {
+        card: svgURI('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700" viewBox="0 0 500 700"><rect width="500" height="700" fill="#2d3748"/><text x="250" y="355" font-family="Arial,sans-serif" font-size="40" font-weight="700" fill="#ffffff" text-anchor="middle">Card Artwork</text></svg>'),
+        cutout: svgURI(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">' +
+            '<defs><pattern id="h" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#0a0a0a" stroke-width="1" stroke-opacity=".18"/></pattern></defs>' +
+            '<g transform="translate(400 500)">' +
+              '<rect x="-270" y="-380" width="540" height="760" rx="28" fill="url(#h)" stroke="#0a0a0a" stroke-width="2"/>' +
+              '<rect x="-235" y="-345" width="470" height="380" rx="8" fill="none" stroke="#0a0a0a" stroke-width="1.25"/>' +
+              '<line x1="-235" y1="80" x2="235" y2="80" stroke="#0a0a0a" stroke-width="1"/>' +
+              '<line x1="-235" y1="130" x2="120" y2="130" stroke="#0a0a0a" stroke-width="1" stroke-opacity=".5"/>' +
+              '<line x1="-235" y1="170" x2="60" y2="170" stroke="#0a0a0a" stroke-width="1" stroke-opacity=".5"/>' +
+              '<text x="0" y="-150" font-family="Courier New,monospace" font-size="26" letter-spacing="4" fill="#0a0a0a" text-anchor="middle">VISUEL DÉTOURÉ</text>' +
+            '</g></svg>')
+      };
+      document.querySelectorAll('img[data-art]').forEach(function (img) {
+        var fb = FALLBACK[img.dataset.art];
+        var swap = function () { if (img.src !== fb) img.src = fb; };
+        img.addEventListener('error', swap);
+        if (img.complete && img.naturalWidth === 0) swap();
+      });
+
+      /* 2. Scroll-triggered fade-in from below:
+            opacity-0 translate-y-10  →  opacity-100 translate-y-0 */
+      var els = document.querySelectorAll('[data-reveal]');
+      var show = function (el) {
+        el.classList.remove('opacity-0', 'translate-y-10');
+        el.classList.add('opacity-100', 'translate-y-0');
+      };
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce || !('IntersectionObserver' in window)) { els.forEach(show); return; }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { show(e.target); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+      els.forEach(function (el) { io.observe(el); });
+    })();
+  </script>
+</body>
+</html>
