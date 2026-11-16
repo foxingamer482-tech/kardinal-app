@@ -19,18 +19,17 @@ function DashboardContent() {
   const [isVip, setIsVip] = useState(false);
   const [memberSince, setMemberSince] = useState('N/A');
   const [loading, setLoading] = useState(true);
-  const [isConnected, setIsConnected] = useState(true); // Gère l'affichage sans forcer de redirection
+  const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
-    async function fetchSessionAndData() {
-      const { data: { session } } = await supabase.auth.getSession();
-      
+    async function loadUserData(session: any) {
       if (!session) {
-        setIsConnected(false); // On casse la boucle infinie ici
+        setIsConnected(false);
         setLoading(false);
         return;
       }
 
+      setIsConnected(true);
       const email = session.user.email;
       if (email) setUserEmail(email);
 
@@ -54,18 +53,28 @@ function DashboardContent() {
           }
         }
       }
-      
       setLoading(false);
     }
 
-    fetchSessionAndData();
+    // Vérifie immédiatement
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      loadUserData(session);
+    });
+
+    // L'ECOUTEUR MAGIQUE : Attend que Supabase valide le lien de l'email
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        loadUserData(session);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [success]);
 
   if (loading) {
-    return <p className="text-gray-400">Synchronisation de votre session...</p>;
+    return <p className="text-gray-400">Vérification de la clé de sécurité en cours...</p>;
   }
 
-  // Si l'utilisateur n'est pas reconnu, on affiche une erreur propre au lieu de rediriger de force
   if (!isConnected) {
     return (
       <div className="mt-8 border border-red-500/50 bg-red-500/10 p-6 max-w-md">
