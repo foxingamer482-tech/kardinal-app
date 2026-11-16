@@ -1,3 +1,4 @@
+import CheckoutButton from "./CheckoutButton";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -80,10 +81,10 @@ export default async function DashboardPage() {
 
       {!isVip && (
         <section className="mt-8 border border-neutral-800 p-6">
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-neutral-400 mb-6">
             Les signaux d'arbitrage sont réservés aux membres VIP.
           </p>
-          {/* Phase 2 : bouton Stripe Checkout */}
+          <CheckoutButton />
         </section>
       )}
     </main>
