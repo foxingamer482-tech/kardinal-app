@@ -1,137 +1,61 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense } from 'react';
-import Link from 'next/link';
-import CheckoutButton from './CheckoutButton';
+import { useState } from 'react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-function DashboardContent() {
-  const searchParams = useSearchParams();
-  const success = searchParams.get('success');
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isVip, setIsVip] = useState(false);
-  const [memberSince, setMemberSince] = useState('N/A');
-  const [loading, setLoading] = useState(true);
-  const [isConnected, setIsConnected] = useState(true);
-
-  useEffect(() => {
-    async function loadUserData(session: any) {
-      if (!session) {
-        setIsConnected(false);
-        setLoading(false);
-        return;
-      }
-
-      setIsConnected(true);
-      const email = session.user.email;
-      if (email) setUserEmail(email);
-
-      // 1. Validation Stripe
-      if (success === 'true' && email) {
-        await supabase.from('profiles').update({ is_vip: true }).eq('email', email);
-      }
-
-      // 2. Récupération des données
-      if (email) {
-        const { data: userData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', email)
-          .single();
-
-        if (userData) {
-          setIsVip(userData.is_vip);
-          if (userData.created_at) {
-            setMemberSince(new Date(userData.created_at).toLocaleDateString('fr-FR'));
-          }
-        }
-      }
-      setLoading(false);
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    setLoading(false);
+    if (!error) {
+      setSent(true);
+    } else {
+      alert(error.message);
     }
-
-    // Vérifie immédiatement
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      loadUserData(session);
-    });
-
-    // L'ECOUTEUR MAGIQUE : Attend que Supabase valide le lien de l'email
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        loadUserData(session);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [success]);
-
-  if (loading) {
-    return <p className="text-gray-400">Vérification de la clé de sécurité en cours...</p>;
-  }
-
-  if (!isConnected) {
-    return (
-      <div className="mt-8 border border-red-500/50 bg-red-500/10 p-6 max-w-md">
-        <h2 className="text-red-500 font-bold mb-2">Session expirée</h2>
-        <p className="text-gray-300 mb-6 text-sm">Le système n'a pas pu vérifier votre identité. Veuillez vous reconnecter.</p>
-        <Link href="/login" className="bg-white text-black px-4 py-2 font-bold uppercase hover:bg-gray-200 transition-colors">
-          Se connecter
-        </Link>
-      </div>
-    );
-  }
+  };
 
   return (
-    <div className="space-y-6 max-w-xl">
-      <p>{userEmail}</p>
-      
-      <div>
-        <h2 className="text-gray-400 text-sm mb-1 uppercase tracking-widest">
-          ACCÈS {isVip ? <span className="text-green-500">VIP</span> : "STANDARD"}
-        </h2>
+    <main className="min-h-screen bg-black text-white p-8 font-mono flex flex-col justify-center items-center">
+      <div className="max-w-md w-full space-y-6">
+        <h1 className="text-3xl font-bold">KARDINAL // LOGIN</h1>
+        {sent ? (
+          <p className="text-green-500">Lien de connexion envoyé à {email}. Vérifie tes e-mails !</p>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input
+              type="email"
+              placeholder="ton@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full p-3 bg-neutral-900 border border-neutral-700 text-white rounded"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-white text-black py-3 font-bold uppercase hover:bg-gray-200 transition-colors"
+            >
+              {loading ? "Envoi..." : "Recevoir le lien magique"}
+            </button>
+          </form>
+        )}
       </div>
-
-      <div>
-        <p className="text-gray-400 text-sm mb-1">Statut abonnement</p>
-        <p className={isVip ? "text-green-500 font-bold" : "text-white"}>
-          {isVip ? "Actif" : "Inactif"}
-        </p>
-      </div>
-
-      <div>
-        <p className="text-gray-400 text-sm mb-1">Membre depuis</p>
-        <p>{memberSince}</p>
-      </div>
-
-      <p className="mt-8">Les signaux d'arbitrage sont réservés aux membres VIP.</p>
-
-      {isVip ? (
-        <div className="mt-4 p-4 border border-green-500/30 bg-green-500/10">
-          <h3 className="text-green-500 font-bold mb-2">Signaux d'arbitrage débloqués</h3>
-          <p className="text-sm text-gray-300">Synchronisation des données du marché TCG en cours...</p>
-        </div>
-      ) : (
-        <div className="mt-4">
-          <CheckoutButton />
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function DashboardPage() {
-  return (
-    <main className="min-h-screen bg-black text-white p-8 font-mono">
-      <h1 className="text-3xl font-bold mb-8">KARDINAL // TERMINAL</h1>
-      <Suspense fallback={<p className="text-gray-400">Chargement de l'interface...</p>}>
-        <DashboardContent />
-      </Suspense>
     </main>
   );
 }
