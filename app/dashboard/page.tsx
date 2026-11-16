@@ -1,8 +1,9 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
+import Link from 'next/link';
 import CheckoutButton from './CheckoutButton';
 
 const supabase = createClient(
@@ -11,7 +12,6 @@ const supabase = createClient(
 );
 
 function DashboardContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const success = searchParams.get('success');
 
@@ -19,29 +19,27 @@ function DashboardContent() {
   const [isVip, setIsVip] = useState(false);
   const [memberSince, setMemberSince] = useState('N/A');
   const [loading, setLoading] = useState(true);
+  const [isConnected, setIsConnected] = useState(true); // Gère l'affichage sans forcer de redirection
 
   useEffect(() => {
     async function fetchSessionAndData() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        router.push('/login');
+        setIsConnected(false); // On casse la boucle infinie ici
+        setLoading(false);
         return;
       }
 
       const email = session.user.email;
       if (email) setUserEmail(email);
 
-      // 1. Validation du paiement Stripe
+      // 1. Validation Stripe
       if (success === 'true' && email) {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ is_vip: true })
-          .eq('email', email);
-        if (error) console.error("Erreur VIP:", error);
+        await supabase.from('profiles').update({ is_vip: true }).eq('email', email);
       }
 
-      // 2. Récupération des données à jour
+      // 2. Récupération des données
       if (email) {
         const { data: userData } = await supabase
           .from('profiles')
@@ -61,10 +59,23 @@ function DashboardContent() {
     }
 
     fetchSessionAndData();
-  }, [router, success]);
+  }, [success]);
 
   if (loading) {
     return <p className="text-gray-400">Synchronisation de votre session...</p>;
+  }
+
+  // Si l'utilisateur n'est pas reconnu, on affiche une erreur propre au lieu de rediriger de force
+  if (!isConnected) {
+    return (
+      <div className="mt-8 border border-red-500/50 bg-red-500/10 p-6 max-w-md">
+        <h2 className="text-red-500 font-bold mb-2">Session expirée</h2>
+        <p className="text-gray-300 mb-6 text-sm">Le système n'a pas pu vérifier votre identité. Veuillez vous reconnecter.</p>
+        <Link href="/login" className="bg-white text-black px-4 py-2 font-bold uppercase hover:bg-gray-200 transition-colors">
+          Se connecter
+        </Link>
+      </div>
+    );
   }
 
   return (
