@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 
 // Le "as any" empêche Vercel de bloquer la compilation pour une histoire de texte
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-10-28' as any, 
+  apiVersion: '2024-10-28.acacia' as any, 
 });
 
 export async function POST(request: Request) {
